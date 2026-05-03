@@ -1,6 +1,6 @@
 # AgentSAST
 
-An agentic SAST (Static Application Security Testing) tool that uses a hypothesis-driven planner/analyzer architecture. Model-agnostic — works with AWS Bedrock (Claude), OpenAI (GPT-4o), or local models (Ollama, llama.cpp, vLLM).
+An agentic SAST (Static Application Security Testing) tool that uses a hypothesis-driven planner/analyzer architecture. Model-agnostic. Works with AWS Bedrock (Claude), OpenAI (GPT-4o), or local models (Ollama, llama.cpp, vLLM).
 
 ### Why it works
 
@@ -8,7 +8,7 @@ The core insight is combining **semantic code search** with **CodeQL's interproc
 
 - **Semantic search** finds the sinks. The agent describes what it's looking for in natural language (*"function that builds a database query from request parameters"*) and gets back the relevant code chunks without reading every file. That's discovery.
 
-- **CodeQL** proves the data flow. The agent writes a targeted taint-tracking query for the specific source-sink pair it suspects, and CodeQL traces it across the entire call graph — through function calls, callbacks, middleware chains. That's verification.
+- **CodeQL** proves the data flow. The agent writes a targeted taint-tracking query for the specific source-sink pair it suspects, and CodeQL traces it across the entire call graph through function calls, callbacks, middleware chains. That's verification.
 
 Together, the agent spends tokens on *reasoning about what to investigate* rather than on reading code or tracing flows manually.
 
@@ -33,7 +33,7 @@ python3 -m venv .venv
   - AWS credentials with Bedrock access (Claude + Titan Embeddings)
   - OpenAI API key (`OPENAI_API_KEY` env or `--api-key`)
   - Local model server (Ollama, vLLM, llama.cpp) running on localhost
-- CodeQL CLI (optional — install from [GitHub releases](https://github.com/github/codeql-action/releases))
+- CodeQL CLI (install from [GitHub releases](https://github.com/github/codeql-action/releases))
 
 ## Usage
 
@@ -50,7 +50,7 @@ sast-agent scan /path/to/repo -p local --model qwen2.5-coder:32b -o report.json
 # Scan changed files in a PR
 sast-agent scan /path/to/repo --diff-base main -o report.json
 
-# Hybrid SAST + DAST — agents probe the live app
+# Hybrid SAST + DAST: agents can probe the live app
 sast-agent scan /path/to/repo --target-url http://localhost:3000 -o report.json
 
 # Verbose logging (see every tool call)
@@ -81,11 +81,6 @@ Options:
   --no-poc                    Disable PoC generation
   -v, --verbose               Enable verbose logging
 ```
-
-### Exit codes
-
-- `0` — scan completed, no critical/high findings
-- `1` — scan completed with critical or high severity findings (useful for CI gating)
 
 ## How it works
 
@@ -127,7 +122,7 @@ The planner does not dive deep into any single code path. That's the analyzer's 
 
 ### Phase 2: Analyzers
 
-Each hypothesis gets its own analyzer agent — a **separate agent instance** with a fresh conversation, dedicated system prompt, and independent tool-use loop. The analyzer's job is binary: **prove it, disprove it, or mark it uncertain** — with evidence.
+Each hypothesis gets its own analyzer agent: A **separate agent instance** with a fresh conversation, dedicated system prompt, and independent tool-use loop. The analyzer's job is binary: **prove it, disprove it, or mark it uncertain** with evidence.
 
 An analyzer will:
 - Read the specific files identified by the planner
@@ -157,7 +152,7 @@ Analyzers share a semantic index and CodeQL database so those costs are paid onc
 
 The verifier takes all analyzer outputs and:
 - **Deduplicates** overlapping findings (same file + same vuln type)
-- **Challenges** weak evidence — downgrades low-confidence confirmations
+- **Challenges** weak evidence: downgrades low-confidence confirmations
 - **Ranks** by severity and confidence
 - Produces the final report with an executive summary
 
@@ -169,7 +164,7 @@ The verifier takes all analyzer outputs and:
 | `openai` | GPT-4o | text-embedding-3-small | Uses `OPENAI_API_KEY` env or `--api-key`. |
 | `local` | Any model via Ollama/vLLM/llama.cpp | nomic-embed-text or similar | Connects to OpenAI-compatible API at localhost. |
 
-You can mix providers — for example, use OpenAI for the LLM and a local model for embeddings:
+You can mix providers, for example, use OpenAI for the LLM and a local model for embeddings:
 
 ```bash
 sast-agent scan /path/to/repo -p openai --embedding-provider local --embedding-model nomic-embed-text
@@ -187,7 +182,7 @@ sast-agent scan /path/to/repo -p openai --embedding-provider local --embedding-m
 | `git_changed_files` | List changed files in a PR/branch |
 | `git_log` | Recent commit history |
 | `codeql_run` | Run built-in CodeQL queries by risk area (sqli, xss, ssrf, etc.) |
-| `codeql_query_raw` | Write and execute **arbitrary CodeQL QL** inline — custom taint tracking, data flow, anything |
+| `codeql_query_raw` | Write and execute **arbitrary CodeQL QL** inline. custom taint tracking, data flow, anything |
 | `codeql_list_queries` | List available built-in queries for a language |
 | `semantic_search` | FAISS-backed vector search over AST-chunked code (tree-sitter + embeddings) |
 | `semantic_index_files` | Add specific files to the search index |
@@ -269,7 +264,7 @@ Results from a real scan (8 hypotheses, ~10 minutes):
 
 ## Benchmarking
 
-Evaluated against [AICGSecEval](https://github.com/Tencent/AICGSecEval) (Tencent) — a repository-level benchmark of real-world CVEs across PHP, Python, Go, JavaScript, and Java. Each test case is a real GitHub repo checked out at the vulnerable commit, with ground-truth file paths and line ranges.
+Evaluated against [AICGSecEval](https://github.com/Tencent/AICGSecEval) (Tencent), a repository-level benchmark of real-world CVEs across PHP, Python, Go, JavaScript, and Java. Each test case is a real GitHub repo checked out at the vulnerable commit, with ground-truth file paths and line ranges.
 
 **Configuration**: 1 hypothesis per case, Claude Sonnet 4 on Bedrock, all tools enabled.
 
@@ -355,7 +350,7 @@ sast_agent/
 
 - **Hypothesis-driven**: the planner creates bounded hypotheses; analyzers don't wander
 - **Evidence-based**: every finding requires concrete evidence and counter-evidence checks
-- **Disciplined agents**: each analyzer has one job — prove or disprove a specific hypothesis
+- **Disciplined agents**: each analyzer has one job to prove or disprove a specific hypothesis
 - **Model-agnostic**: swap between Bedrock, OpenAI, or local models with a CLI flag
 - **Safe by default**: shell allowlist, Python sandbox, DAST requests scoped to target host only
 - **Shared context**: all analyzers reuse the same FAISS index and CodeQL database
