@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs and debug output
+*.log
+tool-errors.log
+
+# Benchmark artifacts (results are regenerated)
+benchmark-results.json
+benchmark-debug.log
+
+# FAISS index cache
+*.faiss
+*.meta.json
+
+# OS
+.DS_Store
+Thumbs.db
