@@ -12,6 +12,81 @@ The core insight is combining **semantic code search** with **CodeQL's interproc
 
 Together, the agent spends tokens on *reasoning about what to investigate* rather than on reading code or tracing flows manually.
 
+## Installation
+
+```bash
+git clone https://github.com/anon767/AgentSAST.git
+cd AgentSAST
+
+python3 -m venv .venv
+.venv/bin/pip install -e .
+
+# Install CodeQL (optional but recommended)
+# Download the bundle from https://github.com/github/codeql-action/releases
+# Extract and symlink the binary to your PATH
+```
+
+### Requirements
+
+- Python 3.9+
+- One of:
+  - AWS credentials with Bedrock access (Claude + Titan Embeddings)
+  - OpenAI API key (`OPENAI_API_KEY` env or `--api-key`)
+  - Local model server (Ollama, vLLM, llama.cpp) running on localhost
+- CodeQL CLI (optional — install from [GitHub releases](https://github.com/github/codeql-action/releases))
+
+## Usage
+
+```bash
+# Bedrock (default)
+sast-agent scan /path/to/repo -o report.json
+
+# OpenAI
+sast-agent scan /path/to/repo -p openai -o report.json
+
+# Local model via Ollama
+sast-agent scan /path/to/repo -p local --model qwen2.5-coder:32b -o report.json
+
+# Scan changed files in a PR
+sast-agent scan /path/to/repo --diff-base main -o report.json
+
+# Hybrid SAST + DAST — agents probe the live app
+sast-agent scan /path/to/repo --target-url http://localhost:3000 -o report.json
+
+# Verbose logging (see every tool call)
+sast-agent scan /path/to/repo -v -o report.json
+```
+
+### CLI options
+
+```
+Usage: sast-agent scan [OPTIONS] [REPO_PATH]
+
+Options:
+  -p, --provider [bedrock|openai|local]  LLM provider (default: bedrock)
+  --model TEXT                Model ID (auto-detected per provider if empty)
+  --api-key TEXT              API key (OpenAI, or use OPENAI_API_KEY env)
+  --base-url TEXT             API base URL (local models, or OpenAI override)
+  --region TEXT               AWS region (Bedrock only, default: us-east-1)
+  --embedding-provider TEXT   Embedding provider (defaults to --provider)
+  --embedding-model TEXT      Embedding model ID
+  -d, --diff-base TEXT        Git ref to diff against (e.g. main)
+  -f, --files TEXT            Specific files to scan (repeatable)
+  -n, --max-hypotheses INT    Max hypotheses to generate (default: 15)
+  -t, --target-url TEXT       Live app URL for DAST probing
+  -o, --output TEXT           Write JSON report to file
+  --log-file TEXT             Write debug log to file
+  --no-codeql                 Disable CodeQL
+  --no-semantic               Disable semantic search
+  --no-poc                    Disable PoC generation
+  -v, --verbose               Enable verbose logging
+```
+
+### Exit codes
+
+- `0` — scan completed, no critical/high findings
+- `1` — scan completed with critical or high severity findings (useful for CI gating)
+
 ## How it works
 
 ```
@@ -88,8 +163,6 @@ The verifier takes all analyzer outputs and:
 
 ## LLM Providers
 
-sast-agent is model-agnostic. The provider abstraction translates between a common internal message format and each provider's API.
-
 | Provider | LLM | Embeddings | Notes |
 |----------|-----|------------|-------|
 | `bedrock` | Claude Sonnet 4 | Titan Embeddings V2 | Default. Uses AWS credentials. |
@@ -103,8 +176,6 @@ sast-agent scan /path/to/repo -p openai --embedding-provider local --embedding-m
 ```
 
 ## Tools
-
-Every agent has access to the same toolbox via the LLM's tool-use API:
 
 | Tool | Description |
 |------|-------------|
@@ -125,15 +196,13 @@ Every agent has access to the same toolbox via the LLM's tool-use API:
 
 ### Semantic search
 
-1. **Parses** every source file with [tree-sitter](https://tree-sitter.github.io/) (JS, TS, Java, Go, Ruby, Rust, C, C++, C#) or Python's `ast` module, extracting functions, classes, methods, and top-level blocks as individual chunks with metadata (name, signature, parent class, docstring, line range).
+1. **Parses** every source file with [tree-sitter](https://tree-sitter.github.io/) (JS, TS, Java, Go, Ruby, Rust, C, C++, C#) or Python's `ast` module, extracting functions, classes, methods, and top-level blocks as individual chunks with metadata.
 
 2. **Embeds** each chunk using the configured embedding provider (Bedrock Titan, OpenAI, or local).
 
 3. **Indexes** the vectors in a [FAISS](https://github.com/facebookresearch/faiss) flat inner-product index for fast cosine similarity search.
 
-4. **Searches** by natural-language description of the code pattern you're looking for. The agents write queries like *"function that builds a MongoDB query from request parameters"* and get back the most semantically similar code chunks.
-
-The index is built once on first search and cached to disk. Subsequent searches are instant.
+4. **Searches** by natural-language description of the code pattern you're looking for.
 
 ### CodeQL
 
@@ -149,87 +218,7 @@ select call, "eval() call found"
 
 A temporary qlpack with the correct language dependencies is auto-generated, `codeql pack install` resolves them, and the query runs against the database. Results come back as SARIF or CSV.
 
-
-## Installation
-
-```bash
-# Clone
-git clone <this-repo>
-cd sast-agent
-
-# Create venv and install
-python3 -m venv .venv
-.venv/bin/pip install -e .
-
-# Install CodeQL (optional but recommended)
-# Download the bundle from https://github.com/github/codeql-action/releases
-# Extract and symlink the binary to your PATH
-```
-
-### Requirements
-
-- Python 3.9+
-- One of:
-  - AWS credentials with Bedrock access (Claude + Titan Embeddings)
-  - OpenAI API key (`OPENAI_API_KEY` env or `--api-key`)
-  - Local model server (Ollama, vLLM, llama.cpp) running on localhost
-- CodeQL CLI (optional — install from [GitHub releases](https://github.com/github/codeql-action/releases))
-
-## Usage
-
-```bash
-# Bedrock (default)
-sast-agent scan /path/to/repo -o report.json
-
-# OpenAI
-sast-agent scan /path/to/repo -p openai -o report.json
-
-# Local model via Ollama
-sast-agent scan /path/to/repo -p local --model qwen2.5-coder:32b -o report.json
-
-# Local model with custom endpoint (vLLM, llama.cpp)
-sast-agent scan /path/to/repo -p local --model local --base-url http://localhost:8080/v1 -o report.json
-
-# Scan changed files in a PR
-sast-agent scan /path/to/repo --diff-base main -o report.json
-
-# Scan specific files
-sast-agent scan /path/to/repo -f src/auth.ts -f src/db.ts -o report.json
-
-# Hybrid SAST + DAST — agents probe the live app
-sast-agent scan /path/to/repo --target-url http://localhost:3000 -o report.json
-
-# Verbose logging (see every tool call)
-sast-agent scan /path/to/repo -v -o report.json
-```
-
-### CLI options
-
-```
-Usage: sast-agent scan [OPTIONS] [REPO_PATH]
-
-Options:
-  -p, --provider [bedrock|openai|local]  LLM provider (default: bedrock)
-  --model TEXT                Model ID (auto-detected per provider if empty)
-  --api-key TEXT              API key (OpenAI, or use OPENAI_API_KEY env)
-  --base-url TEXT             API base URL (local models, or OpenAI override)
-  --region TEXT               AWS region (Bedrock only, default: us-east-1)
-  --embedding-provider TEXT   Embedding provider (defaults to --provider)
-  --embedding-model TEXT      Embedding model ID
-  -d, --diff-base TEXT        Git ref to diff against (e.g. main)
-  -f, --files TEXT            Specific files to scan (repeatable)
-  -n, --max-hypotheses INT    Max hypotheses to generate (default: 15)
-  -t, --target-url TEXT       Live app URL for DAST probing
-  -o, --output TEXT           Write JSON report to file
-  --no-codeql                 Disable CodeQL
-  --no-semantic               Disable semantic search
-  --no-poc                    Disable PoC generation
-  -v, --verbose               Enable verbose logging
-```
-
 ## Output
-
-The JSON report contains:
 
 ```json
 {
@@ -276,7 +265,7 @@ Results from a real scan (8 hypotheses, ~10 minutes):
 | HIGH | Plaintext password storage | 95% |
 | MEDIUM | IDOR in allocations | 95% |
 
-7 confirmed, 0 false positives. Every finding includes evidence, exploitability assessment, fix suggestion, and PoC.
+7 confirmed, 0 false positives.
 
 ## Benchmarking
 
@@ -324,17 +313,49 @@ Evaluated against [AICGSecEval](https://github.com/Tencent/AICGSecEval) (Tencent
 ### Running the benchmark
 
 ```bash
-# Clone the dataset
 git clone https://github.com/Tencent/AICGSecEval.git /tmp/AICGSecEval
 
-# Run all cases (resumes automatically if interrupted)
 python benchmark/run_benchmark.py \
     --dataset /tmp/AICGSecEval/data/data_v1.json \
     --max-hypotheses 1 \
     -o benchmark-results.json
 
-# Generate plots
 python benchmark/plot_results.py benchmark-results.json
 ```
 
-The benchmark clones each repo at the vulnerable commit, runs the planner + analyzer pipeline (skipping the verifier), and scores against known vulnerable files and line ranges. Results are saved after every case so progress isn't lost if credentials expire or the process is interrupted.
+## Architecture
+
+```
+sast_agent/
+├── cli.py                  # Click CLI entry point
+├── config.py               # Pydantic config models (LLMConfig, EmbeddingConfig, etc.)
+├── models.py               # Hypothesis, Evidence, Finding, ScanReport
+├── orchestrator.py         # Planner → Analyzer(s) → Verifier pipeline
+├── tool_registry.py        # Tool definitions + dispatch handler
+├── utils.py                # Shared JSON extraction utilities
+├── providers/
+│   ├── __init__.py         # Factory functions (create_llm_from_config, etc.)
+│   ├── base.py             # Abstract LLMProvider + EmbeddingProvider
+│   ├── bedrock.py          # AWS Bedrock (Claude + Titan Embeddings)
+│   ├── openai_provider.py  # OpenAI (GPT-4o + text-embedding-3)
+│   └── local.py            # Local models via OpenAI-compatible API
+├── agents/
+│   ├── planner.py          # Broad attack surface mapping
+│   ├── analyzer.py         # Deep hypothesis investigation
+│   └── verifier.py         # Deduplication + ranking
+└── tools/
+    ├── shell.py            # Allowlisted shell execution
+    ├── git_tools.py        # Git diff, log, grep
+    ├── codeql.py           # CodeQL database, queries, raw QL execution
+    ├── semantic_search.py  # Tree-sitter chunking + embeddings + FAISS
+    └── python_repl.py      # Sandboxed Python for PoCs (DAST-aware)
+```
+
+## Design principles
+
+- **Hypothesis-driven**: the planner creates bounded hypotheses; analyzers don't wander
+- **Evidence-based**: every finding requires concrete evidence and counter-evidence checks
+- **Disciplined agents**: each analyzer has one job — prove or disprove a specific hypothesis
+- **Model-agnostic**: swap between Bedrock, OpenAI, or local models with a CLI flag
+- **Safe by default**: shell allowlist, Python sandbox, DAST requests scoped to target host only
+- **Shared context**: all analyzers reuse the same FAISS index and CodeQL database
